@@ -1,11 +1,3 @@
-/*
- *  Copyright (c) 2015 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
-
 'use strict';
 
 const startButton = document.getElementById('startButton');
@@ -20,11 +12,21 @@ hangupButton.onclick = hangup;
 const video1 = document.querySelector('video#video1');
 const video2 = document.querySelector('video#video2');
 const video3 = document.querySelector('video#video3');
+const video4 = document.querySelector('video#video4');
+const form = document.querySelector('form#form');
+const input = document.querySelector('#room');
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault()
+  console.log('Room - ', input.value)
+});
 
 let pc1Local;
 let pc1Remote;
 let pc2Local;
 let pc2Remote;
+let pc3Local;
+let pc3Remote;
 const offerOptions = {
   offerToReceiveAudio: 1,
   offerToReceiveVideo: 1
@@ -77,6 +79,13 @@ function call() {
   pc2Remote.onicecandidate = iceCallback2Remote;
   console.log('pc2: created local and remote peer connection objects');
 
+  pc3Local = new RTCPeerConnection(servers);
+  pc3Remote = new RTCPeerConnection(servers);
+  pc3Remote.ontrack = gotRemoteStream3;
+  pc3Local.onicecandidate = iceCallback3Local;
+  pc3Remote.onicecandidate = iceCallback3Remote;
+  console.log('pc3: created local and remote peer connection objects');
+
   window.localStream.getTracks().forEach(track => pc1Local.addTrack(track, window.localStream));
   console.log('Adding local stream to pc1Local');
   pc1Local
@@ -87,6 +96,11 @@ function call() {
   console.log('Adding local stream to pc2Local');
   pc2Local.createOffer(offerOptions)
       .then(gotDescription2Local, onCreateSessionDescriptionError);
+
+  window.localStream.getTracks().forEach(track => pc3Local.addTrack(track, window.localStream));
+  console.log('Adding local stream to pc3Local');
+  pc3Local.createOffer(offerOptions)
+      .then(gotDescription3Local, onCreateSessionDescriptionError);
 }
 
 function onCreateSessionDescriptionError(error) {
@@ -125,14 +139,33 @@ function gotDescription2Remote(desc) {
   pc2Local.setRemoteDescription(desc);
 }
 
+function gotDescription3Local(desc) {
+  pc3Local.setLocalDescription(desc);
+  console.log(`Offer from pc3Local\n${desc.sdp}`);
+  pc3Remote.setRemoteDescription(desc);
+  // Since the 'remote' side has no media stream we need
+  // to pass in the right constraints in order for it to
+  // accept the incoming offer of audio and video.
+  pc3Remote.createAnswer().then(gotDescription3Remote, onCreateSessionDescriptionError);
+}
+
+function gotDescription3Remote(desc) {
+  pc3Remote.setLocalDescription(desc);
+  console.log(`Answer from pc3Remote\n${desc.sdp}`);
+  pc3Local.setRemoteDescription(desc);
+}
+
 function hangup() {
   console.log('Ending calls');
   pc1Local.close();
   pc1Remote.close();
   pc2Local.close();
   pc2Remote.close();
+  pc3Local.close();
+  pc3Remote.close();
   pc1Local = pc1Remote = null;
   pc2Local = pc2Remote = null;
+  pc3Local = pc3Remote = null;
   hangupButton.disabled = true;
   callButton.disabled = false;
 }
@@ -151,6 +184,13 @@ function gotRemoteStream2(e) {
   }
 }
 
+function gotRemoteStream3(e) {
+  if (video4.srcObject !== e.streams[0]) {
+    video4.srcObject = e.streams[0];
+    console.log('pc3: received remote stream');
+  }
+}
+
 function iceCallback1Local(event) {
   handleCandidate(event.candidate, pc1Remote, 'pc1: ', 'local');
 }
@@ -165,6 +205,14 @@ function iceCallback2Local(event) {
 
 function iceCallback2Remote(event) {
   handleCandidate(event.candidate, pc2Local, 'pc2: ', 'remote');
+}
+
+function iceCallback3Local(event) {
+  handleCandidate(event.candidate, pc3Remote, 'pc3: ', 'local');
+}
+
+function iceCallback3Remote(event) {
+  handleCandidate(event.candidate, pc3Local, 'pc3: ', 'remote');
 }
 
 function handleCandidate(candidate, dest, prefix, type) {
