@@ -1,233 +1,509 @@
-'use strict';
+function getHTMLMediaElement(mediaElement, config) {
+  config = config || {};
 
-const configuration = {'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}]}
-const peerConnection = new RTCPeerConnection(configuration);
+  if (!mediaElement.nodeName || (mediaElement.nodeName.toLowerCase() != 'audio' && mediaElement.nodeName.toLowerCase() != 'video')) {
+      if (!mediaElement.getVideoTracks().length) {
+          return getAudioElement(mediaElement, config);
+      }
 
-const startButton = document.getElementById('startButton');
-const callButton = document.getElementById('callButton');
-const hangupButton = document.getElementById('hangupButton');
-callButton.disabled = true;
-hangupButton.disabled = true;
-startButton.onclick = start;
-callButton.onclick = call;
-hangupButton.onclick = hangup;
+      var mediaStream = mediaElement;
+      mediaElement = document.createElement(mediaStream.getVideoTracks().length ? 'video' : 'audio');
 
-const video1 = document.querySelector('video#video1');
-const video2 = document.querySelector('video#video2');
-const video3 = document.querySelector('video#video3');
-const video4 = document.querySelector('video#video4');
-const form = document.querySelector('form#form');
-const input = document.querySelector('#room');
+      try {
+          mediaElement.setAttributeNode(document.createAttribute('autoplay'));
+          mediaElement.setAttributeNode(document.createAttribute('playsinline'));
+      } catch (e) {
+          mediaElement.setAttribute('autoplay', true);
+          mediaElement.setAttribute('playsinline', true);
+      }
 
-form.addEventListener('submit', (e) => {
-  e.preventDefault()
-  console.log('Room - ', input.value)
-});
-
-let pc1Local;
-let pc1Remote;
-let pc2Local;
-let pc2Remote;
-let pc3Local;
-let pc3Remote;
-const offerOptions = {
-  offerToReceiveAudio: 1,
-  offerToReceiveVideo: 1
-};
-
-function gotStream(stream) {
-  console.log('Received local stream');
-  video1.srcObject = stream;
-  window.localStream = stream;
-  callButton.disabled = false;
-}
-
-function start() {
-  console.log('Requesting local stream');
-  startButton.disabled = true;
-  navigator.mediaDevices
-      .getUserMedia({
-        audio: true,
-        video: true
-      })
-      .then(gotStream)
-      .catch(e => console.log('getUserMedia() error: ', e));
-}
-
-function call() {
-  callButton.disabled = true;
-  hangupButton.disabled = false;
-  console.log('Starting calls');
-  const audioTracks = window.localStream.getAudioTracks();
-  const videoTracks = window.localStream.getVideoTracks();
-  if (audioTracks.length > 0) {
-    console.log(`Using audio device: ${audioTracks[0].label}`);
+      if ('srcObject' in mediaElement) {
+          mediaElement.srcObject = mediaStream;
+      } else {
+          mediaElement[!!navigator.mozGetUserMedia ? 'mozSrcObject' : 'src'] = !!navigator.mozGetUserMedia ? mediaStream : (window.URL || window.webkitURL).createObjectURL(mediaStream);
+      }
   }
-  if (videoTracks.length > 0) {
-    console.log(`Using video device: ${videoTracks[0].label}`);
+
+  if (mediaElement.nodeName && mediaElement.nodeName.toLowerCase() == 'audio') {
+      return getAudioElement(mediaElement, config);
   }
-  // Create an RTCPeerConnection via the polyfill.
-  const servers = null;
-  pc1Local = new RTCPeerConnection(servers);
-  pc1Remote = new RTCPeerConnection(servers);
-  pc1Remote.ontrack = gotRemoteStream1;
-  pc1Local.onicecandidate = iceCallback1Local;
-  pc1Remote.onicecandidate = iceCallback1Remote;
-  console.log('pc1: created local and remote peer connection objects');
 
-  pc2Local = new RTCPeerConnection(servers);
-  pc2Remote = new RTCPeerConnection(servers);
-  pc2Remote.ontrack = gotRemoteStream2;
-  pc2Local.onicecandidate = iceCallback2Local;
-  pc2Remote.onicecandidate = iceCallback2Remote;
-  console.log('pc2: created local and remote peer connection objects');
+  var buttons = config.buttons || ['mute-audio', 'mute-video', 'full-screen', 'volume-slider', 'stop'];
+  buttons.has = function(element) {
+      return buttons.indexOf(element) !== -1;
+  };
 
-  pc3Local = new RTCPeerConnection(servers);
-  pc3Remote = new RTCPeerConnection(servers);
-  pc3Remote.ontrack = gotRemoteStream3;
-  pc3Local.onicecandidate = iceCallback3Local;
-  pc3Remote.onicecandidate = iceCallback3Remote;
-  console.log('pc3: created local and remote peer connection objects');
+  config.toggle = config.toggle || [];
+  config.toggle.has = function(element) {
+      return config.toggle.indexOf(element) !== -1;
+  };
 
-  window.localStream.getTracks().forEach(track => pc1Local.addTrack(track, window.localStream));
-  console.log('Adding local stream to pc1Local');
-  pc1Local
-      .createOffer(offerOptions)
-      .then(gotDescription1Local, onCreateSessionDescriptionError);
+  var mediaElementContainer = document.createElement('div');
+  mediaElementContainer.className = 'media-container';
 
-  window.localStream.getTracks().forEach(track => pc2Local.addTrack(track, window.localStream));
-  console.log('Adding local stream to pc2Local');
-  pc2Local.createOffer(offerOptions)
-      .then(gotDescription2Local, onCreateSessionDescriptionError);
+  var mediaControls = document.createElement('div');
+  mediaControls.className = 'media-controls';
+  mediaElementContainer.appendChild(mediaControls);
 
-  window.localStream.getTracks().forEach(track => pc3Local.addTrack(track, window.localStream));
-  console.log('Adding local stream to pc3Local');
-  pc3Local.createOffer(offerOptions)
-      .then(gotDescription3Local, onCreateSessionDescriptionError);
-}
+  if (buttons.has('mute-audio')) {
+      var muteAudio = document.createElement('div');
+      muteAudio.className = 'control ' + (config.toggle.has('mute-audio') ? 'unmute-audio selected' : 'mute-audio');
+      mediaControls.appendChild(muteAudio);
 
-function onCreateSessionDescriptionError(error) {
-  console.log(`Failed to create session description: ${error.toString()}`);
-}
-
-function gotDescription1Local(desc) {
-  pc1Local.setLocalDescription(desc);
-  console.log(`Offer from pc1Local\n${desc.sdp}`);
-  pc1Remote.setRemoteDescription(desc);
-  // Since the 'remote' side has no media stream we need
-  // to pass in the right constraints in order for it to
-  // accept the incoming offer of audio and video.
-  pc1Remote.createAnswer().then(gotDescription1Remote, onCreateSessionDescriptionError);
-}
-
-function gotDescription1Remote(desc) {
-  pc1Remote.setLocalDescription(desc);
-  console.log(`Answer from pc1Remote\n${desc.sdp}`);
-  pc1Local.setRemoteDescription(desc);
-}
-
-function gotDescription2Local(desc) {
-  pc2Local.setLocalDescription(desc);
-  console.log(`Offer from pc2Local\n${desc.sdp}`);
-  pc2Remote.setRemoteDescription(desc);
-  // Since the 'remote' side has no media stream we need
-  // to pass in the right constraints in order for it to
-  // accept the incoming offer of audio and video.
-  pc2Remote.createAnswer().then(gotDescription2Remote, onCreateSessionDescriptionError);
-}
-
-function gotDescription2Remote(desc) {
-  pc2Remote.setLocalDescription(desc);
-  console.log(`Answer from pc2Remote\n${desc.sdp}`);
-  pc2Local.setRemoteDescription(desc);
-}
-
-function gotDescription3Local(desc) {
-  pc3Local.setLocalDescription(desc);
-  console.log(`Offer from pc3Local\n${desc.sdp}`);
-  pc3Remote.setRemoteDescription(desc);
-  // Since the 'remote' side has no media stream we need
-  // to pass in the right constraints in order for it to
-  // accept the incoming offer of audio and video.
-  pc3Remote.createAnswer().then(gotDescription3Remote, onCreateSessionDescriptionError);
-}
-
-function gotDescription3Remote(desc) {
-  pc3Remote.setLocalDescription(desc);
-  console.log(`Answer from pc3Remote\n${desc.sdp}`);
-  pc3Local.setRemoteDescription(desc);
-}
-
-function hangup() {
-  console.log('Ending calls');
-  pc1Local.close();
-  pc1Remote.close();
-  pc2Local.close();
-  pc2Remote.close();
-  pc3Local.close();
-  pc3Remote.close();
-  pc1Local = pc1Remote = null;
-  pc2Local = pc2Remote = null;
-  pc3Local = pc3Remote = null;
-  hangupButton.disabled = true;
-  callButton.disabled = false;
-}
-
-function gotRemoteStream1(e) {
-  if (video2.srcObject !== e.streams[0]) {
-    video2.srcObject = e.streams[0];
-    console.log('pc1: received remote stream');
+      muteAudio.onclick = function() {
+          if (muteAudio.className.indexOf('unmute-audio') != -1) {
+              muteAudio.className = muteAudio.className.replace('unmute-audio selected', 'mute-audio');
+              mediaElement.muted = false;
+              mediaElement.volume = 1;
+              if (config.onUnMuted) config.onUnMuted('audio');
+          } else {
+              muteAudio.className = muteAudio.className.replace('mute-audio', 'unmute-audio selected');
+              mediaElement.muted = true;
+              mediaElement.volume = 0;
+              if (config.onMuted) config.onMuted('audio');
+          }
+      };
   }
-}
 
-function gotRemoteStream2(e) {
-  if (video3.srcObject !== e.streams[0]) {
-    video3.srcObject = e.streams[0];
-    console.log('pc2: received remote stream');
+  if (buttons.has('mute-video')) {
+      var muteVideo = document.createElement('div');
+      muteVideo.className = 'control ' + (config.toggle.has('mute-video') ? 'unmute-video selected' : 'mute-video');
+      mediaControls.appendChild(muteVideo);
+
+      muteVideo.onclick = function() {
+          if (muteVideo.className.indexOf('unmute-video') != -1) {
+              muteVideo.className = muteVideo.className.replace('unmute-video selected', 'mute-video');
+              mediaElement.muted = false;
+              mediaElement.volume = 1;
+              mediaElement.play();
+              if (config.onUnMuted) config.onUnMuted('video');
+          } else {
+              muteVideo.className = muteVideo.className.replace('mute-video', 'unmute-video selected');
+              mediaElement.muted = true;
+              mediaElement.volume = 0;
+              mediaElement.pause();
+              if (config.onMuted) config.onMuted('video');
+          }
+      };
   }
-}
 
-function gotRemoteStream3(e) {
-  if (video4.srcObject !== e.streams[0]) {
-    video4.srcObject = e.streams[0];
-    console.log('pc3: received remote stream');
+  if (buttons.has('take-snapshot')) {
+      var takeSnapshot = document.createElement('div');
+      takeSnapshot.className = 'control take-snapshot';
+      mediaControls.appendChild(takeSnapshot);
+
+      takeSnapshot.onclick = function() {
+          if (config.onTakeSnapshot) config.onTakeSnapshot();
+      };
   }
+
+  if (buttons.has('stop')) {
+      var stop = document.createElement('div');
+      stop.className = 'control stop';
+      mediaControls.appendChild(stop);
+
+      stop.onclick = function() {
+          mediaElementContainer.style.opacity = 0;
+          setTimeout(function() {
+              if (mediaElementContainer.parentNode) {
+                  mediaElementContainer.parentNode.removeChild(mediaElementContainer);
+              }
+          }, 800);
+          if (config.onStopped) config.onStopped();
+      };
+  }
+
+  var volumeControl = document.createElement('div');
+  volumeControl.className = 'volume-control';
+
+  if (buttons.has('record-audio')) {
+      var recordAudio = document.createElement('div');
+      recordAudio.className = 'control ' + (config.toggle.has('record-audio') ? 'stop-recording-audio selected' : 'record-audio');
+      volumeControl.appendChild(recordAudio);
+
+      recordAudio.onclick = function() {
+          if (recordAudio.className.indexOf('stop-recording-audio') != -1) {
+              recordAudio.className = recordAudio.className.replace('stop-recording-audio selected', 'record-audio');
+              if (config.onRecordingStopped) config.onRecordingStopped('audio');
+          } else {
+              recordAudio.className = recordAudio.className.replace('record-audio', 'stop-recording-audio selected');
+              if (config.onRecordingStarted) config.onRecordingStarted('audio');
+          }
+      };
+  }
+
+  if (buttons.has('record-video')) {
+      var recordVideo = document.createElement('div');
+      recordVideo.className = 'control ' + (config.toggle.has('record-video') ? 'stop-recording-video selected' : 'record-video');
+      volumeControl.appendChild(recordVideo);
+
+      recordVideo.onclick = function() {
+          if (recordVideo.className.indexOf('stop-recording-video') != -1) {
+              recordVideo.className = recordVideo.className.replace('stop-recording-video selected', 'record-video');
+              if (config.onRecordingStopped) config.onRecordingStopped('video');
+          } else {
+              recordVideo.className = recordVideo.className.replace('record-video', 'stop-recording-video selected');
+              if (config.onRecordingStarted) config.onRecordingStarted('video');
+          }
+      };
+  }
+
+  if (buttons.has('volume-slider')) {
+      var volumeSlider = document.createElement('div');
+      volumeSlider.className = 'control volume-slider';
+      volumeControl.appendChild(volumeSlider);
+
+      var slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = 0;
+      slider.max = 100;
+      slider.value = 100;
+      slider.onchange = function() {
+          mediaElement.volume = '.' + slider.value.toString().substr(0, 1);
+      };
+      volumeSlider.appendChild(slider);
+  }
+
+  if (buttons.has('full-screen')) {
+      var zoom = document.createElement('div');
+      zoom.className = 'control ' + (config.toggle.has('zoom-in') ? 'zoom-out selected' : 'zoom-in');
+
+      if (!slider && !recordAudio && !recordVideo && zoom) {
+          mediaControls.insertBefore(zoom, mediaControls.firstChild);
+      } else volumeControl.appendChild(zoom);
+
+      zoom.onclick = function() {
+          if (zoom.className.indexOf('zoom-out') != -1) {
+              zoom.className = zoom.className.replace('zoom-out selected', 'zoom-in');
+              exitFullScreen();
+          } else {
+              zoom.className = zoom.className.replace('zoom-in', 'zoom-out selected');
+              launchFullscreen(mediaElementContainer);
+          }
+      };
+
+      function launchFullscreen(element) {
+          if (element.requestFullscreen) {
+              element.requestFullscreen();
+          } else if (element.mozRequestFullScreen) {
+              element.mozRequestFullScreen();
+          } else if (element.webkitRequestFullscreen) {
+              element.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+          }
+      }
+
+      function exitFullScreen() {
+          if (document.fullscreen) {
+              document.cancelFullScreen();
+          }
+
+          if (document.mozFullScreen) {
+              document.mozCancelFullScreen();
+          }
+
+          if (document.webkitIsFullScreen) {
+              document.webkitCancelFullScreen();
+          }
+      }
+
+      function screenStateChange(e) {
+          if (e.srcElement != mediaElementContainer) return;
+
+          var isFullScreeMode = document.webkitIsFullScreen || document.mozFullScreen || document.fullscreen;
+
+          mediaElementContainer.style.width = (isFullScreeMode ? (window.innerWidth - 20) : config.width) + 'px';
+          mediaElementContainer.style.display = isFullScreeMode ? 'block' : 'inline-block';
+
+          if (config.height) {
+              mediaBox.style.height = (isFullScreeMode ? (window.innerHeight - 20) : config.height) + 'px';
+          }
+
+          if (!isFullScreeMode && config.onZoomout) config.onZoomout();
+          if (isFullScreeMode && config.onZoomin) config.onZoomin();
+
+          if (!isFullScreeMode && zoom.className.indexOf('zoom-out') != -1) {
+              zoom.className = zoom.className.replace('zoom-out selected', 'zoom-in');
+              if (config.onZoomout) config.onZoomout();
+          }
+          setTimeout(adjustControls, 1000);
+      }
+
+      document.addEventListener('fullscreenchange', screenStateChange, false);
+      document.addEventListener('mozfullscreenchange', screenStateChange, false);
+      document.addEventListener('webkitfullscreenchange', screenStateChange, false);
+  }
+
+  if (buttons.has('volume-slider') || buttons.has('full-screen') || buttons.has('record-audio') || buttons.has('record-video')) {
+      mediaElementContainer.appendChild(volumeControl);
+  }
+
+  var mediaBox = document.createElement('div');
+  mediaBox.className = 'media-box';
+  mediaElementContainer.appendChild(mediaBox);
+
+  if (config.title) {
+      var h2 = document.createElement('h2');
+      h2.innerHTML = config.title;
+      h2.setAttribute('style', 'position: absolute;color:white;font-size:17px;text-shadow: 1px 1px black;padding:0;margin:0;text-align: left; margin-top: 10px; margin-left: 10px; display: block; border: 0;line-height:1.5;z-index:1;');
+      mediaBox.appendChild(h2);
+  }
+
+  mediaBox.appendChild(mediaElement);
+
+  if (!config.width) config.width = (innerWidth / 2) - 50;
+
+  mediaElementContainer.style.width = config.width + 'px';
+
+  if (config.height) {
+      mediaBox.style.height = config.height + 'px';
+  }
+
+  mediaBox.querySelector('video').style.maxHeight = innerHeight + 'px';
+
+  var times = 0;
+
+  function adjustControls() {
+      mediaControls.style.marginLeft = (mediaElementContainer.clientWidth - mediaControls.clientWidth - 2) + 'px';
+
+      if (slider) {
+          slider.style.width = (mediaElementContainer.clientWidth / 3) + 'px';
+          volumeControl.style.marginLeft = (mediaElementContainer.clientWidth / 3 - 30) + 'px';
+
+          if (zoom) zoom.style['border-top-right-radius'] = '5px';
+      } else {
+          volumeControl.style.marginLeft = (mediaElementContainer.clientWidth - volumeControl.clientWidth - 2) + 'px';
+      }
+
+      volumeControl.style.marginTop = (mediaElementContainer.clientHeight - volumeControl.clientHeight - 2) + 'px';
+
+      if (times < 10) {
+          times++;
+          setTimeout(adjustControls, 1000);
+      } else times = 0;
+  }
+
+  if (config.showOnMouseEnter || typeof config.showOnMouseEnter === 'undefined') {
+      mediaElementContainer.onmouseenter = mediaElementContainer.onmousedown = function() {
+          adjustControls();
+          mediaControls.style.opacity = 1;
+          volumeControl.style.opacity = 1;
+      };
+
+      mediaElementContainer.onmouseleave = function() {
+          mediaControls.style.opacity = 0;
+          volumeControl.style.opacity = 0;
+      };
+  } else {
+      setTimeout(function() {
+          adjustControls();
+          setTimeout(function() {
+              mediaControls.style.opacity = 1;
+              volumeControl.style.opacity = 1;
+          }, 300);
+      }, 700);
+  }
+
+  adjustControls();
+
+  mediaElementContainer.toggle = function(clasName) {
+      if (typeof clasName != 'string') {
+          for (var i = 0; i < clasName.length; i++) {
+              mediaElementContainer.toggle(clasName[i]);
+          }
+          return;
+      }
+
+      if (clasName == 'mute-audio' && muteAudio) muteAudio.onclick();
+      if (clasName == 'mute-video' && muteVideo) muteVideo.onclick();
+
+      if (clasName == 'record-audio' && recordAudio) recordAudio.onclick();
+      if (clasName == 'record-video' && recordVideo) recordVideo.onclick();
+
+      if (clasName == 'stop' && stop) stop.onclick();
+
+      return this;
+  };
+
+  mediaElementContainer.media = mediaElement;
+
+  return mediaElementContainer;
 }
 
-function iceCallback1Local(event) {
-  handleCandidate(event.candidate, pc1Remote, 'pc1: ', 'local');
-}
+// __________________
+// getAudioElement.js
 
-function iceCallback1Remote(event) {
-  handleCandidate(event.candidate, pc1Local, 'pc1: ', 'remote');
-}
+function getAudioElement(mediaElement, config) {
+  config = config || {};
 
-function iceCallback2Local(event) {
-  handleCandidate(event.candidate, pc2Remote, 'pc2: ', 'local');
-}
+  if (!mediaElement.nodeName || (mediaElement.nodeName.toLowerCase() != 'audio' && mediaElement.nodeName.toLowerCase() != 'video')) {
+      var mediaStream = mediaElement;
+      mediaElement = document.createElement('audio');
 
-function iceCallback2Remote(event) {
-  handleCandidate(event.candidate, pc2Local, 'pc2: ', 'remote');
-}
+      try {
+          mediaElement.setAttributeNode(document.createAttribute('autoplay'));
+          mediaElement.setAttributeNode(document.createAttribute('controls'));
+      } catch (e) {
+          mediaElement.setAttribute('autoplay', true);
+          mediaElement.setAttribute('controls', true);
+      }
 
-function iceCallback3Local(event) {
-  handleCandidate(event.candidate, pc3Remote, 'pc3: ', 'local');
-}
+      if ('srcObject' in mediaElement) {
+          mediaElement.mediaElement = mediaStream;
+      } else {
+          mediaElement[!!navigator.mozGetUserMedia ? 'mozSrcObject' : 'src'] = !!navigator.mozGetUserMedia ? mediaStream : (window.URL || window.webkitURL).createObjectURL(mediaStream);
+      }
+  }
 
-function iceCallback3Remote(event) {
-  handleCandidate(event.candidate, pc3Local, 'pc3: ', 'remote');
-}
+  config.toggle = config.toggle || [];
+  config.toggle.has = function(element) {
+      return config.toggle.indexOf(element) !== -1;
+  };
 
-function handleCandidate(candidate, dest, prefix, type) {
-  dest.addIceCandidate(candidate)
-      .then(onAddIceCandidateSuccess, onAddIceCandidateError);
-  console.log(`${prefix}New ${type} ICE candidate: ${candidate ? candidate.candidate : '(null)'}`);
-}
+  var mediaElementContainer = document.createElement('div');
+  mediaElementContainer.className = 'media-container';
 
-function onAddIceCandidateSuccess() {
-  console.log('AddIceCandidate success.');
-}
+  var mediaControls = document.createElement('div');
+  mediaControls.className = 'media-controls';
+  mediaElementContainer.appendChild(mediaControls);
 
-function onAddIceCandidateError(error) {
-  console.log(`Failed to add ICE candidate: ${error.toString()}`);
+  var muteAudio = document.createElement('div');
+  muteAudio.className = 'control ' + (config.toggle.has('mute-audio') ? 'unmute-audio selected' : 'mute-audio');
+  mediaControls.appendChild(muteAudio);
+
+  muteAudio.style['border-top-left-radius'] = '5px';
+
+  muteAudio.onclick = function() {
+      if (muteAudio.className.indexOf('unmute-audio') != -1) {
+          muteAudio.className = muteAudio.className.replace('unmute-audio selected', 'mute-audio');
+          mediaElement.muted = false;
+          if (config.onUnMuted) config.onUnMuted('audio');
+      } else {
+          muteAudio.className = muteAudio.className.replace('mute-audio', 'unmute-audio selected');
+          mediaElement.muted = true;
+          if (config.onMuted) config.onMuted('audio');
+      }
+  };
+
+  if (!config.buttons || (config.buttons && config.buttons.indexOf('record-audio') != -1)) {
+      var recordAudio = document.createElement('div');
+      recordAudio.className = 'control ' + (config.toggle.has('record-audio') ? 'stop-recording-audio selected' : 'record-audio');
+      mediaControls.appendChild(recordAudio);
+
+      recordAudio.onclick = function() {
+          if (recordAudio.className.indexOf('stop-recording-audio') != -1) {
+              recordAudio.className = recordAudio.className.replace('stop-recording-audio selected', 'record-audio');
+              if (config.onRecordingStopped) config.onRecordingStopped('audio');
+          } else {
+              recordAudio.className = recordAudio.className.replace('record-audio', 'stop-recording-audio selected');
+              if (config.onRecordingStarted) config.onRecordingStarted('audio');
+          }
+      };
+  }
+
+  var volumeSlider = document.createElement('div');
+  volumeSlider.className = 'control volume-slider';
+  volumeSlider.style.width = 'auto';
+  mediaControls.appendChild(volumeSlider);
+
+  var slider = document.createElement('input');
+  slider.style.marginTop = '11px';
+  slider.style.width = ' 200px';
+
+  if (config.buttons && config.buttons.indexOf('record-audio') == -1) {
+      slider.style.width = ' 241px';
+  }
+
+  slider.type = 'range';
+  slider.min = 0;
+  slider.max = 100;
+  slider.value = 100;
+  slider.onchange = function() {
+      mediaElement.volume = '.' + slider.value.toString().substr(0, 1);
+  };
+  volumeSlider.appendChild(slider);
+
+  var stop = document.createElement('div');
+  stop.className = 'control stop';
+  mediaControls.appendChild(stop);
+
+  stop.onclick = function() {
+      mediaElementContainer.style.opacity = 0;
+      setTimeout(function() {
+          if (mediaElementContainer.parentNode) {
+              mediaElementContainer.parentNode.removeChild(mediaElementContainer);
+          }
+      }, 800);
+      if (config.onStopped) config.onStopped();
+  };
+
+  stop.style['border-top-right-radius'] = '5px';
+  stop.style['border-bottom-right-radius'] = '5px';
+
+  var mediaBox = document.createElement('div');
+  mediaBox.className = 'media-box';
+  mediaElementContainer.appendChild(mediaBox);
+
+  var h2 = document.createElement('h2');
+  h2.innerHTML = config.title || 'Audio Element';
+  h2.setAttribute('style', 'position: absolute;color: rgb(160, 160, 160);font-size: 20px;text-shadow: 1px 1px rgb(255, 255, 255);padding:0;margin:0;');
+  mediaBox.appendChild(h2);
+
+  mediaBox.appendChild(mediaElement);
+
+  mediaElementContainer.style.width = '329px';
+  mediaBox.style.height = '90px';
+
+  h2.style.width = mediaElementContainer.style.width;
+  h2.style.height = '50px';
+  h2.style.overflow = 'hidden';
+
+  var times = 0;
+
+  function adjustControls() {
+      mediaControls.style.marginLeft = (mediaElementContainer.clientWidth - mediaControls.clientWidth - 7) + 'px';
+      mediaControls.style.marginTop = (mediaElementContainer.clientHeight - mediaControls.clientHeight - 6) + 'px';
+      if (times < 10) {
+          times++;
+          setTimeout(adjustControls, 1000);
+      } else times = 0;
+  }
+
+  if (config.showOnMouseEnter || typeof config.showOnMouseEnter === 'undefined') {
+      mediaElementContainer.onmouseenter = mediaElementContainer.onmousedown = function() {
+          adjustControls();
+          mediaControls.style.opacity = 1;
+      };
+
+      mediaElementContainer.onmouseleave = function() {
+          mediaControls.style.opacity = 0;
+      };
+  } else {
+      setTimeout(function() {
+          adjustControls();
+          setTimeout(function() {
+              mediaControls.style.opacity = 1;
+          }, 300);
+      }, 700);
+  }
+
+  adjustControls();
+
+  mediaElementContainer.toggle = function(clasName) {
+      if (typeof clasName != 'string') {
+          for (var i = 0; i < clasName.length; i++) {
+              mediaElementContainer.toggle(clasName[i]);
+          }
+          return;
+      }
+
+      if (clasName == 'mute-audio' && muteAudio) muteAudio.onclick();
+      if (clasName == 'record-audio' && recordAudio) recordAudio.onclick();
+      if (clasName == 'stop' && stop) stop.onclick();
+
+      return this;
+  };
+
+  mediaElementContainer.media = mediaElement;
+
+  return mediaElementContainer;
 }
