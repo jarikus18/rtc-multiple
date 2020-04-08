@@ -1,5 +1,8 @@
 'use strict';
 
+const configuration = {'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}]}
+const peerConnection = new RTCPeerConnection(configuration);
+
 const startButton = document.getElementById('startButton');
 const callButton = document.getElementById('callButton');
 const hangupButton = document.getElementById('hangupButton');
