@@ -17,7 +17,7 @@
 
   <section class="make-center">
     <div>
-      <label><input type="checkbox" id="record-entire-conference"> Record Entire Conference In The Browser?</label>
+      <label><input type="checkbox" id="record-entire-conference" style="display: none;"></label>
       <span id="recording-status" style="display: none;"></span>
       <button id="btn-stop-recording" style="display: none;">Stop Recording</button>
       <br><br>
@@ -32,9 +32,9 @@
 
     <div id="room-urls" style="text-align: center;display: none;background: #F1EDED;margin: 15px -10px;border: 1px solid rgb(189, 189, 189);border-left: 0;border-right: 0;"></div>
   </section>
-  <script src="./js/socket.io.js"></script>
-  <script src="./js/RTCMultiConnection.min.js"></script>
-<!-- <script src="/node_modules/webrtc-adapter/out/adapter.js"></script> -->
+  <script src="https://rtcmulticonnection.herokuapp.com/dist/RTCMultiConnection.min.js"></script>
+  <script src="https://rtcmulticonnection.herokuapp.com/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/webrtc-adapter/7.3.0/adapter.min.js"></script>
 
 <!-- custom layout for HTML5 audio/video elements -->
 <script src="./js/main.js"></script>
