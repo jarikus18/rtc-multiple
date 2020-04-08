@@ -115,17 +115,17 @@ connection.sdpConstraints.mandatory = {
 
 // STAR_FIX_VIDEO_AUTO_PAUSE_ISSUES
 // via: https://github.com/muaz-khan/RTCMultiConnection/issues/778#issuecomment-524853468
-var bitrates = 512;
+var bitrates = 8;
 var resolutions = 'Ultra-HD';
 var videoConstraints = {};
 
 if (resolutions == 'HD') {
     videoConstraints = {
         width: {
-            ideal: 1280
+            ideal: 200
         },
         height: {
-            ideal: 720
+            ideal: 200
         },
         frameRate: 30
     };
@@ -134,10 +134,10 @@ if (resolutions == 'HD') {
 if (resolutions == 'Ultra-HD') {
     videoConstraints = {
         width: {
-            ideal: 1920
+            ideal: 300
         },
         height: {
-            ideal: 1080
+            ideal: 300
         },
         frameRate: 30
     };
